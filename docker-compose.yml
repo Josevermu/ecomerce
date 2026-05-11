@@ -44,7 +44,7 @@ services:
     environment:
       PORT: 8080
       SPRING_PROFILES_ACTIVE: mock
-      JWT_SECRET: konrad-local-secret-key-2024
+      JWT_SECRET: konrad-local-secret-key-2024-ecommerce
       # En docker-compose se agrega :8080 porque los containers se hablan
       # por el puerto del container, no por el puerto del host.
       # En Azure se usan sin puerto (el environment resuelve internamente).
@@ -75,7 +75,7 @@ services:
     environment:
       PORT: 8080
       SPRING_PROFILES_ACTIVE: mock
-      JWT_SECRET: konrad-local-secret-key-2024
+      JWT_SECRET: konrad-local-secret-key-2024-ecommerce
 
   # ── seller-service ──────────────────────────────────────────────────────────
   # CORRECCION #2: se agrega notification-service a depends_on
