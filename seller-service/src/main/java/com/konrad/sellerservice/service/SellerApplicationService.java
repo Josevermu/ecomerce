@@ -197,34 +197,34 @@ public class SellerApplicationService {
         }
     }
 
-    private ApplicationSummaryResponse toSummary(SellerApplication a) {
-        return ApplicationSummaryResponse.builder()
-                .applicationId(a.getId())
-                .identificacion(a.getIdentificacion())
-                .apellidos(a.getApellidos())
-                .nombres(a.getNombres())
-                .correo(a.getCorreo())
-                .status(a.getStatus().name())
-                .build();
-    }
+private ApplicationSummaryResponse toSummary(SellerApplication a) {
+    return ApplicationSummaryResponse.builder()
+            .id(a.getId())                    // era .applicationId()
+            .identificacion(a.getIdentificacion())
+            .apellidos(a.getApellidos())
+            .nombres(a.getNombres())
+            .correo(a.getCorreo())
+            .status(a.getStatus().name())
+            .fechaSolicitud(a.getFechaSolicitud() != null ? a.getFechaSolicitud().toString() : "")
+            .build();
+}
 
-    private ApplicationDetailResponse toDetail(SellerApplication a) {
-        return ApplicationDetailResponse.builder()
-                .applicationId(a.getId())
-                .nombres(a.getNombres())
-                .apellidos(a.getApellidos())
-                .identificacion(a.getIdentificacion())
-                .tipoPersona(a.getTipoPersona().name())
-                .correo(a.getCorreo())
-                .pais(a.getPais())
-                .ciudad(a.getCiudad())
-                .telefono(a.getTelefono())
-                .documentos(a.getDocumentos())
-                .status(a.getStatus().name())
-                .motivoRechazo(a.getMotivoRechazo())
-                .fechaSolicitud(a.getFechaSolicitud() != null ? a.getFechaSolicitud().toString() : null)
-                .fechaDecision(a.getFechaDecision() != null ? a.getFechaDecision().toString() : null)
-                .sellerId(a.getId())
-                .build();
-    }
+private ApplicationDetailResponse toDetail(SellerApplication a) {
+    return ApplicationDetailResponse.builder()
+            .id(a.getId())                    // era .applicationId()
+            .nombres(a.getNombres())
+            .apellidos(a.getApellidos())
+            .identificacion(a.getIdentificacion())
+            .tipoPersona(a.getTipoPersona() != null ? a.getTipoPersona().name() : "")
+            .correo(a.getCorreo())
+            .pais(a.getPais())
+            .ciudad(a.getCiudad())
+            .telefono(a.getTelefono())
+            .documentos(a.getDocumentos())
+            .status(a.getStatus().name())
+            .motivoRechazo(a.getMotivoRechazo())
+            .fechaSolicitud(a.getFechaSolicitud() != null ? a.getFechaSolicitud().toString() : "")
+            .fechaDecision(a.getFechaDecision()  != null ? a.getFechaDecision().toString()  : "")
+            .build();                         // sin .sellerId() — ese campo no existe en el DTO
+}
 }
