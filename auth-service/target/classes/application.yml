@@ -8,6 +8,9 @@ spring:
     exclude:
       - org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration
       - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
+      # CORRECCION: el actuator tiene su propia auto-config de seguridad que
+      # tambien necesita HttpSecurity. Sin esta linea el contenedor no arranca.
+      - org.springframework.boot.actuate.autoconfigure.security.servlet.ManagementWebSecurityAutoConfiguration
 
 management:
   endpoints:
@@ -17,13 +20,6 @@ management:
   endpoint:
     health:
       show-details: always
-  # CORRECCION #4: se elimino 'management.server.port: ${PORT:8080}'
-  # Esa propiedad le decia a Spring Boot que el actuator corriera en
-  # un puerto separado (aunque era el mismo numero).
-  # Cuando management.server.port == server.port, Spring Boot puede
-  # intentar abrir dos veces el mismo puerto y fallar al arrancar
-  # dependiendo de la version. Sin la propiedad, el actuator comparte
-  # el puerto de la aplicacion automaticamente, que es lo correcto aqui.
 
 logging:
   level:

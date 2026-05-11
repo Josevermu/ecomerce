@@ -4,7 +4,13 @@ server:
 spring:
   application:
     name: notification-service
-  # SMTP para envio real — ignorado cuando mock.enabled=true
+  # CORRECCION: sin esta seccion Spring Boot intenta auto-configurar JavaMailSender
+  # con el host 'mock-smtp-no-disponible'. El actuator tiene un MailHealthIndicator
+  # que al arrancar hace una conexion real al SMTP y falla con MailConnectException.
+  # Soluciones posibles:
+  #   A) Deshabilitar el health indicator de mail (lo que hacemos aqui)
+  #   B) Excluir MailHealthContributorAutoConfiguration completo
+  # Elegimos A porque es menos invasivo y deja el resto del actuator funcionando.
   mail:
     host: ${SMTP_HOST:mock-smtp-no-disponible}
     port: ${SMTP_PORT:587}
@@ -25,6 +31,13 @@ management:
   endpoint:
     health:
       show-details: always
+  health:
+    # CORRECCION: deshabilita el health check de SMTP.
+    # En modo mock no hay servidor de correo real — si queda habilitado,
+    # el actuator marca el servicio como DOWN aunque todo lo demas funcione,
+    # y Azure lo marca como unhealthy y reinicia el container en loop.
+    mail:
+      enabled: false
 
 logging:
   level:
@@ -33,6 +46,4 @@ logging:
 
 konrad:
   mock:
-    # true  = imprime correos en log (modo actual)
-    # false = envia SMTP real (produccion)
     enabled: true
