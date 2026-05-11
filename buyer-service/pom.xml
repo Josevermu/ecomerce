@@ -27,10 +27,21 @@
       <artifactId>spring-boot-starter-web</artifactId>
     </dependency>
 
-    <!-- Actuator: /actuator/health para Azure health probes -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+
+    <!--
+      CORRECCION #7 (pom buyer): se agrega webflux.
+      buyer-service llama a notification-service (envio de credenciales
+      por correo al registrarse) y a auth-service (crear usuario).
+      Ambas llamadas usan WebClient — sin esta dependencia el bean
+      WebClient.Builder no esta disponible y el contexto de Spring falla.
+    -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-webflux</artifactId>
     </dependency>
 
     <dependency>

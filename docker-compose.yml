@@ -1,40 +1,85 @@
 version: '3.9'
 
 # =============================================================================
-# docker-compose.yml — E-Commerce Konrad (desarrollo local)
+# docker-compose.yml — E-Commerce Konrad (desarrollo local)  [CORREGIDO]
 #
-# Simula el Azure Container Apps Environment en tu maquina local.
-# Todos los servicios quedan en la misma red interna y se llaman
-# por nombre de servicio (igual que en Azure).
+# Cambios respecto a la version original:
 #
-# Comandos:
-#   docker-compose up --build          # levanta todo (primera vez)
-#   docker-compose up                  # levanta todo (sin reconstruir)
-#   docker-compose up seller-service   # solo un servicio
-#   docker-compose down                # detiene y elimina containers
-#   docker-compose logs -f seller-service  # ver logs en tiempo real
+#  1. AGREGADO: gateway-service (era el UNICO servicio faltante — el resto
+#     de servicios tienen ingress interno; solo el gateway es publico).
 #
-# Verificar que todos estan sanos:
-#   curl http://localhost:8081/actuator/health   # auth
-#   curl http://localhost:8082/actuator/health   # seller
-#   ... etc
+#  2. CORREGIDO seller-service.depends_on:
+#     - Faltaba notification-service (seller llama a notification via HTTP).
+#
+#  3. CORREGIDO order-service.depends_on:
+#     - Faltaba payment-service (order llama a payment para procesar pagos).
+#
+#  4. CORREGIDO buyer-service.depends_on:
+#     - No tenia depends_on. Necesita auth-service y notification-service.
+#
+#  5. CORREGIDO order-service environment:
+#     - Faltaban NOTIFICATION_SERVICE_URL y SELLER_SERVICE_URL.
+#     - Faltaba webflux en pom.xml para poder usar WebClient (ver nota ahi).
+#
+#  6. CORREGIDO seller-service environment:
+#     - Faltaba CREDIT_CHECK_SERVICE_URL (el Director necesita verificar
+#       credito desde el flujo del seller-service).
+#
+#  7. CORREGIDO auth-service/application.yml (ver ese archivo):
+#     - management.server.port estaba duplicado/incorrecto.
+#
 # =============================================================================
 
 services:
 
+  # ── gateway-service (UNICO con puerto publico) ──────────────────────────────
+  # En Azure: ingress EXTERNO con target-port 8080
+  # En local:  puerto 8080 del host → puerto 8080 del container
+  gateway-service:
+    build:
+      context: ./gateway-service
+      dockerfile: ../Dockerfile
+    ports:
+      - "8080:8080"           # UNICO servicio expuesto al host
+    environment:
+      PORT: 8080
+      SPRING_PROFILES_ACTIVE: mock
+      JWT_SECRET: konrad-local-secret-key-2024
+      # En docker-compose se agrega :8080 porque los containers se hablan
+      # por el puerto del container, no por el puerto del host.
+      # En Azure se usan sin puerto (el environment resuelve internamente).
+      AUTH_SERVICE_URL:         http://auth-service:8080
+      SELLER_SERVICE_URL:       http://seller-service:8080
+      PRODUCT_SERVICE_URL:      http://product-service:8080
+      ORDER_SERVICE_URL:        http://order-service:8080
+      PAYMENT_SERVICE_URL:      http://payment-service:8080
+      BUYER_SERVICE_URL:        http://buyer-service:8080
+      BAM_SERVICE_URL:          http://bam-service:8080
+    depends_on:
+      - auth-service
+      - seller-service
+      - product-service
+      - order-service
+      - payment-service
+      - buyer-service
+      - bam-service
+
   # ── auth-service ────────────────────────────────────────────────────────────
+  # En Azure: ingress INTERNO
   auth-service:
     build:
       context: ./auth-service
       dockerfile: ../Dockerfile
     ports:
-      - "8081:8080"
+      - "8081:8080"           # Solo para pruebas locales directas
     environment:
       PORT: 8080
       SPRING_PROFILES_ACTIVE: mock
       JWT_SECRET: konrad-local-secret-key-2024
 
   # ── seller-service ──────────────────────────────────────────────────────────
+  # CORRECCION #2: se agrega notification-service a depends_on
+  # CORRECCION #6: se agrega CREDIT_CHECK_SERVICE_URL
   seller-service:
     build:
       context: ./seller-service
@@ -44,10 +89,13 @@ services:
     environment:
       PORT: 8080
       SPRING_PROFILES_ACTIVE: mock
-      NOTIFICATION_SERVICE_URL: http://notification-service:8080
-      AUTH_SERVICE_URL: http://auth-service:8080
+      NOTIFICATION_SERVICE_URL:  http://notification-service:8080
+      AUTH_SERVICE_URL:          http://auth-service:8080
+      CREDIT_CHECK_SERVICE_URL:  http://credit-check-service:8080  # AGREGADO
     depends_on:
       - auth-service
+      - notification-service      # AGREGADO (faltaba)
+      - credit-check-service      # AGREGADO (faltaba)
 
   # ── product-service ─────────────────────────────────────────────────────────
   product-service:
@@ -61,6 +109,8 @@ services:
       SPRING_PROFILES_ACTIVE: mock
 
   # ── order-service ───────────────────────────────────────────────────────────
+  # CORRECCION #3: se agrega payment-service a depends_on
+  # CORRECCION #5: se agregan NOTIFICATION_SERVICE_URL y SELLER_SERVICE_URL
   order-service:
     build:
       context: ./order-service
@@ -70,12 +120,16 @@ services:
     environment:
       PORT: 8080
       SPRING_PROFILES_ACTIVE: mock
-      PRODUCT_SERVICE_URL: http://product-service:8080
-      PAYMENT_SERVICE_URL: http://payment-service:8080
+      PRODUCT_SERVICE_URL:       http://product-service:8080
+      PAYMENT_SERVICE_URL:       http://payment-service:8080
+      NOTIFICATION_SERVICE_URL:  http://notification-service:8080   # AGREGADO
+      SELLER_SERVICE_URL:        http://seller-service:8080          # AGREGADO
     depends_on:
       - product-service
+      - payment-service           # AGREGADO (faltaba)
+      - notification-service      # AGREGADO
 
-  # ── payment-service (Patron Strategy) ───────────────────────────────────────
+  # ── payment-service ──────────────────────────────────────────────────────────
   payment-service:
     build:
       context: ./payment-service
@@ -85,11 +139,11 @@ services:
     environment:
       PORT: 8080
       SPRING_PROFILES_ACTIVE: mock
-      PSE_INTERMEDIARY_URL: http://mock-banco-no-disponible
-      PAYMENT_GATEWAY_KEY: mock-key
-      BANK_FTP_HOST: mock-ftp-no-disponible
+      PSE_INTERMEDIARY_URL:  http://mock-banco-no-disponible
+      PAYMENT_GATEWAY_KEY:   mock-key
+      BANK_FTP_HOST:         mock-ftp-no-disponible
 
-  # ── notification-service (Patron Observer — suscriptor puro) ────────────────
+  # ── notification-service ─────────────────────────────────────────────────────
   notification-service:
     build:
       context: ./notification-service
@@ -101,7 +155,7 @@ services:
       SPRING_PROFILES_ACTIVE: mock
       SMTP_HOST: mock-smtp-no-disponible
 
-  # ── credit-check-service (Patron Facade + Strategy) ─────────────────────────
+  # ── credit-check-service ─────────────────────────────────────────────────────
   credit-check-service:
     build:
       context: ./credit-check-service
@@ -111,12 +165,12 @@ services:
     environment:
       PORT: 8080
       SPRING_PROFILES_ACTIVE: mock
-      # Estas URLs son dummy — el mock no hace llamadas HTTP reales
-      DATACREDITO_URL: http://mock-datacredito-no-disponible
-      CIFIN_FTP_HOST: mock-cifin-no-disponible
-      POLICIA_URL: http://mock-policia-no-disponible
+      DATACREDITO_URL:  http://mock-datacredito-no-disponible
+      CIFIN_FTP_HOST:   mock-cifin-no-disponible
+      POLICIA_URL:      http://mock-policia-no-disponible
 
-  # ── buyer-service ───────────────────────────────────────────────────────────
+  # ── buyer-service ─────────────────────────────────────────────────────────
+  # CORRECCION #3: se agrega depends_on (no tenia ninguno)
   buyer-service:
     build:
       context: ./buyer-service
@@ -126,10 +180,13 @@ services:
     environment:
       PORT: 8080
       SPRING_PROFILES_ACTIVE: mock
-      AUTH_SERVICE_URL: http://auth-service:8080
-      NOTIFICATION_SERVICE_URL: http://notification-service:8080
+      AUTH_SERVICE_URL:          http://auth-service:8080
+      NOTIFICATION_SERVICE_URL:  http://notification-service:8080
+    depends_on:
+      - auth-service              # AGREGADO (faltaba)
+      - notification-service      # AGREGADO (faltaba)
 
-  # ── bam-service (KPIs, tendencias, auditoria) ───────────────────────────────
+  # ── bam-service ───────────────────────────────────────────────────────────
   bam-service:
     build:
       context: ./bam-service
@@ -139,16 +196,19 @@ services:
     environment:
       PORT: 8080
       SPRING_PROFILES_ACTIVE: mock
-      ORDER_SERVICE_URL: http://order-service:8080
-      SELLER_SERVICE_URL: http://seller-service:8080
+      ORDER_SERVICE_URL:   http://order-service:8080
+      SELLER_SERVICE_URL:  http://seller-service:8080
       PRODUCT_SERVICE_URL: http://product-service:8080
     depends_on:
       - order-service
       - seller-service
       - product-service
 
-# Red interna compartida — igual que el Azure Container Apps Environment
-# Los servicios se llaman entre si por nombre (http://seller-service)
+# =============================================================================
+# Red interna — equivalente al Azure Container Apps Environment
+# Los servicios se comunican por nombre: http://seller-service:8080
+# El gateway es el unico que sale al exterior (puerto 8080 del host).
+# =============================================================================
 networks:
   default:
     name: konrad-network

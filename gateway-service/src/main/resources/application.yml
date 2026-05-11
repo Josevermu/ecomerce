@@ -1,0 +1,181 @@
+server:
+  port: ${PORT:8080}
+
+spring:
+  application:
+    name: gateway-service
+
+  cloud:
+    gateway:
+      # ─────────────────────────────────────────────────────────────────────
+      # RUTAS DEL GATEWAY
+      #
+      # En Azure Container Apps, todos los microservicios tienen ingress
+      # INTERNO — solo se comunican dentro del environment por nombre de app.
+      # El gateway es el UNICO con ingress externo (publico).
+      #
+      # Convencion de URLs internas en Azure:
+      #   http://{nombre-container-app}          <- sin puerto (Azure lo maneja)
+      # En docker-compose local:
+      #   http://{nombre-servicio}:8080           <- con puerto del container
+      #
+      # La variable de entorno SERVICE_URL se sobreescribe en docker-compose
+      # con el puerto :8080. En Azure se deja sin puerto.
+      # ─────────────────────────────────────────────────────────────────────
+
+      routes:
+
+        # ── Autenticacion (publica — login y registro no requieren JWT) ───
+        - id: auth-public
+          uri: ${AUTH_SERVICE_URL:http://auth-service}
+          predicates:
+            - Path=/auth/login, /auth/register
+          # Sin filtro JWT: estas rutas son de acceso publico
+
+        # ── Autenticacion (privada — cambio de contrasena, listado usuarios) 
+        - id: auth-private
+          uri: ${AUTH_SERVICE_URL:http://auth-service}
+          predicates:
+            - Path=/auth/**
+          filters:
+            - name: JwtAuthFilter
+
+        # ── Seller — rutas publicas (consulta de estado y envio de solicitud) 
+        - id: seller-public
+          uri: ${SELLER_SERVICE_URL:http://seller-service}
+          predicates:
+            - Path=/sellers/apply, /sellers/status
+          # Sin JWT: cualquier persona puede enviar solicitud o consultar estado
+
+        # ── Seller — rutas protegidas (Director y vendedores autenticados)
+        - id: seller-private
+          uri: ${SELLER_SERVICE_URL:http://seller-service}
+          predicates:
+            - Path=/sellers/**
+          filters:
+            - name: JwtAuthFilter
+
+        # ── Product — consulta publica (cualquiera puede ver productos)
+        - id: product-public
+          uri: ${PRODUCT_SERVICE_URL:http://product-service}
+          predicates:
+            - Path=/products, /products/{id}
+          # Sin JWT: la vitrina de productos es publica
+
+        # ── Product — publicacion y gestion (requiere autenticacion vendedor)
+        - id: product-private
+          uri: ${PRODUCT_SERVICE_URL:http://product-service}
+          predicates:
+            - Path=/products/**
+          filters:
+            - name: JwtAuthFilter
+
+        # ── Order (requiere autenticacion de comprador)
+        - id: order-routes
+          uri: ${ORDER_SERVICE_URL:http://order-service}
+          predicates:
+            - Path=/orders/**
+          filters:
+            - name: JwtAuthFilter
+
+        # ── Payment (requiere autenticacion)
+        - id: payment-routes
+          uri: ${PAYMENT_SERVICE_URL:http://payment-service}
+          predicates:
+            - Path=/payments/**
+          filters:
+            - name: JwtAuthFilter
+
+        # ── Buyer — registro publico (cualquiera puede registrarse como comprador)
+        - id: buyer-register
+          uri: ${BUYER_SERVICE_URL:http://buyer-service}
+          predicates:
+            - Path=/buyers/register
+          # Sin JWT: el registro es abierto
+
+        # ── Buyer — perfil y operaciones (requiere autenticacion)
+        - id: buyer-private
+          uri: ${BUYER_SERVICE_URL:http://buyer-service}
+          predicates:
+            - Path=/buyers/**
+          filters:
+            - name: JwtAuthFilter
+
+        # ── BAM / KPIs (solo Director y Admin)
+        - id: bam-routes
+          uri: ${BAM_SERVICE_URL:http://bam-service}
+          predicates:
+            - Path=/bam/**
+          filters:
+            - name: JwtAuthFilter
+
+        # ── Credit Check (uso interno desde seller-service, no expuesto directo)
+        # Este servicio NO tiene ruta publica en el gateway.
+        # seller-service lo llama directamente via red interna.
+        # Si el Director necesita ver el resultado lo ve a traves de seller.
+
+        # ── Notification (uso interno — no se expone al exterior)
+        # notification-service solo recibe llamadas de otros microservicios
+        # dentro de la red privada del Container Apps Environment.
+
+      # ─────────────────────────────────────────────────────────────────────
+      # CORS global — permite que el frontend (React/Angular) llame al gateway
+      # ─────────────────────────────────────────────────────────────────────
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOriginPatterns:
+              - "*"
+            allowedMethods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - OPTIONS
+            allowedHeaders:
+              - "*"
+            allowCredentials: true
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ACTUATOR
+# ─────────────────────────────────────────────────────────────────────────────
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway
+  endpoint:
+    health:
+      show-details: always
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LOGGING
+# ─────────────────────────────────────────────────────────────────────────────
+logging:
+  level:
+    com.konrad: DEBUG
+    org.springframework.cloud.gateway: INFO
+    root: WARN
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CONFIGURACION KONRAD
+#
+# URLs internas (Azure): http://{nombre-app}         — sin puerto
+# URLs locales (docker): http://{nombre-servicio}:8080 — con puerto
+#
+# El docker-compose sobreescribe estas variables con la forma :8080.
+# En Azure se usan como estan aqui (sin puerto).
+# ─────────────────────────────────────────────────────────────────────────────
+konrad:
+  jwt:
+    secret: ${JWT_SECRET:konrad-ecommerce-super-secret-key-2024-arquitectura-software}
+  services:
+    auth-url:         ${AUTH_SERVICE_URL:http://auth-service}
+    seller-url:       ${SELLER_SERVICE_URL:http://seller-service}
+    product-url:      ${PRODUCT_SERVICE_URL:http://product-service}
+    order-url:        ${ORDER_SERVICE_URL:http://order-service}
+    payment-url:      ${PAYMENT_SERVICE_URL:http://payment-service}
+    buyer-url:        ${BUYER_SERVICE_URL:http://buyer-service}
+    bam-url:          ${BAM_SERVICE_URL:http://bam-service}
+    # credit-check y notification NO se exponen por el gateway
+    # (son servicios puramente internos)

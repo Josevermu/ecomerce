@@ -27,10 +27,25 @@
       <artifactId>spring-boot-starter-web</artifactId>
     </dependency>
 
-    <!-- Actuator: /actuator/health para Azure health probes -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+
+    <!--
+      CORRECCION #6 (pom): se agrega webflux para usar WebClient.
+      order-service necesita llamar a notification-service y seller-service
+      con WebClient (igual que hace seller-service para llamar a notification).
+      Sin esta dependencia, WebClient.builder() lanza NoClassDefFoundError
+      al arrancar el container.
+      NOTA: spring-boot-starter-web (Tomcat, servlet) y spring-boot-starter-webflux
+      (Netty, reactivo) pueden coexistir en el mismo jar — Spring Boot detecta
+      que hay un servidor servlet activo y no intenta levantar Netty.
+      WebClient queda disponible solo como cliente HTTP reactivo.
+    -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-webflux</artifactId>
     </dependency>
 
     <dependency>
