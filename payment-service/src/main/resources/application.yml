@@ -1,0 +1,33 @@
+server:
+  port: ${PORT:8080}
+
+spring:
+  application:
+    name: payment-service
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    com.konrad: DEBUG
+    root: WARN
+
+konrad:
+  # Variables para integraciones reales — ignoradas en modo mock
+  pse:
+    intermediary-url: ${PSE_INTERMEDIARY_URL:http://mock-banco-no-disponible}
+  gateway:
+    api-key: ${PAYMENT_GATEWAY_KEY:mock-gateway-key}
+  bank:
+    ftp-host: ${BANK_FTP_HOST:mock-bank-ftp-no-disponible}
+    ftp-user: ${BANK_FTP_USER:mock-user}
+    ftp-pass: ${BANK_FTP_PASS:mock-pass}
+  mock:
+    enabled: true

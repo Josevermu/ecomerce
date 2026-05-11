@@ -1,0 +1,40 @@
+# =============================================================
+# .dockerignore — E-Commerce Konrad
+# Coloca este archivo en la carpeta raiz de cada microservicio,
+# al mismo nivel que el Dockerfile y el pom.xml
+# =============================================================
+
+# Compilados de Maven — no se necesitan, el Stage 1 compila desde cero
+target/
+
+# Git
+.git/
+.gitignore
+
+# IDEs
+.idea/
+*.iml
+.vscode/
+*.code-workspace
+*.classpath
+*.project
+.settings/
+
+# Logs y temporales
+*.log
+logs/
+tmp/
+
+# Archivos del OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Documentacion — no va al container
+*.md
+docs/
+
+# Variables de entorno locales — NUNCA incluir en la imagen
+.env
+.env.local
+.env.*.local

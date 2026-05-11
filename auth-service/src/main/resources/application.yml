@@ -1,0 +1,35 @@
+server:
+  port: ${PORT:8080}
+
+spring:
+  application:
+    name: auth-service
+  autoconfigure:
+    # Desactiva la pantalla de login de Spring Security
+    # Los endpoints los protege el API Gateway con JWT
+    exclude:
+      - org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration
+      - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+  server:
+    port: ${PORT:8080}
+
+logging:
+  level:
+    com.konrad: DEBUG
+    root: WARN
+
+konrad:
+  jwt:
+    secret: ${JWT_SECRET:konrad-ecommerce-super-secret-key-2024-arquitectura-software}
+    expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+  mock:
+    enabled: true

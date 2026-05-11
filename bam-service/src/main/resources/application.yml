@@ -1,0 +1,28 @@
+server:
+  port: ${PORT:8080}
+
+spring:
+  application:
+    name: bam-service
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    com.konrad: DEBUG
+    root: WARN
+
+konrad:
+  services:
+    order-url: ${ORDER_SERVICE_URL:http://localhost:8084}
+    seller-url: ${SELLER_SERVICE_URL:http://localhost:8082}
+    product-url: ${PRODUCT_SERVICE_URL:http://localhost:8083}
+  mock:
+    enabled: true

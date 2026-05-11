@@ -1,0 +1,155 @@
+version: '3.9'
+
+# =============================================================================
+# docker-compose.yml — E-Commerce Konrad (desarrollo local)
+#
+# Simula el Azure Container Apps Environment en tu maquina local.
+# Todos los servicios quedan en la misma red interna y se llaman
+# por nombre de servicio (igual que en Azure).
+#
+# Comandos:
+#   docker-compose up --build          # levanta todo (primera vez)
+#   docker-compose up                  # levanta todo (sin reconstruir)
+#   docker-compose up seller-service   # solo un servicio
+#   docker-compose down                # detiene y elimina containers
+#   docker-compose logs -f seller-service  # ver logs en tiempo real
+#
+# Verificar que todos estan sanos:
+#   curl http://localhost:8081/actuator/health   # auth
+#   curl http://localhost:8082/actuator/health   # seller
+#   ... etc
+# =============================================================================
+
+services:
+
+  # ── auth-service ────────────────────────────────────────────────────────────
+  auth-service:
+    build:
+      context: ./auth-service
+      dockerfile: ../Dockerfile
+    ports:
+      - "8081:8080"
+    environment:
+      PORT: 8080
+      SPRING_PROFILES_ACTIVE: mock
+      JWT_SECRET: konrad-local-secret-key-2024
+
+  # ── seller-service ──────────────────────────────────────────────────────────
+  seller-service:
+    build:
+      context: ./seller-service
+      dockerfile: ../Dockerfile
+    ports:
+      - "8082:8080"
+    environment:
+      PORT: 8080
+      SPRING_PROFILES_ACTIVE: mock
+      NOTIFICATION_SERVICE_URL: http://notification-service:8080
+      AUTH_SERVICE_URL: http://auth-service:8080
+    depends_on:
+      - auth-service
+
+  # ── product-service ─────────────────────────────────────────────────────────
+  product-service:
+    build:
+      context: ./product-service
+      dockerfile: ../Dockerfile
+    ports:
+      - "8083:8080"
+    environment:
+      PORT: 8080
+      SPRING_PROFILES_ACTIVE: mock
+
+  # ── order-service ───────────────────────────────────────────────────────────
+  order-service:
+    build:
+      context: ./order-service
+      dockerfile: ../Dockerfile
+    ports:
+      - "8084:8080"
+    environment:
+      PORT: 8080
+      SPRING_PROFILES_ACTIVE: mock
+      PRODUCT_SERVICE_URL: http://product-service:8080
+      PAYMENT_SERVICE_URL: http://payment-service:8080
+    depends_on:
+      - product-service
+
+  # ── payment-service (Patron Strategy) ───────────────────────────────────────
+  payment-service:
+    build:
+      context: ./payment-service
+      dockerfile: ../Dockerfile
+    ports:
+      - "8085:8080"
+    environment:
+      PORT: 8080
+      SPRING_PROFILES_ACTIVE: mock
+      PSE_INTERMEDIARY_URL: http://mock-banco-no-disponible
+      PAYMENT_GATEWAY_KEY: mock-key
+      BANK_FTP_HOST: mock-ftp-no-disponible
+
+  # ── notification-service (Patron Observer — suscriptor puro) ────────────────
+  notification-service:
+    build:
+      context: ./notification-service
+      dockerfile: ../Dockerfile
+    ports:
+      - "8086:8080"
+    environment:
+      PORT: 8080
+      SPRING_PROFILES_ACTIVE: mock
+      SMTP_HOST: mock-smtp-no-disponible
+
+  # ── credit-check-service (Patron Facade + Strategy) ─────────────────────────
+  credit-check-service:
+    build:
+      context: ./credit-check-service
+      dockerfile: ../Dockerfile
+    ports:
+      - "8087:8080"
+    environment:
+      PORT: 8080
+      SPRING_PROFILES_ACTIVE: mock
+      # Estas URLs son dummy — el mock no hace llamadas HTTP reales
+      DATACREDITO_URL: http://mock-datacredito-no-disponible
+      CIFIN_FTP_HOST: mock-cifin-no-disponible
+      POLICIA_URL: http://mock-policia-no-disponible
+
+  # ── buyer-service ───────────────────────────────────────────────────────────
+  buyer-service:
+    build:
+      context: ./buyer-service
+      dockerfile: ../Dockerfile
+    ports:
+      - "8088:8080"
+    environment:
+      PORT: 8080
+      SPRING_PROFILES_ACTIVE: mock
+      AUTH_SERVICE_URL: http://auth-service:8080
+      NOTIFICATION_SERVICE_URL: http://notification-service:8080
+
+  # ── bam-service (KPIs, tendencias, auditoria) ───────────────────────────────
+  bam-service:
+    build:
+      context: ./bam-service
+      dockerfile: ../Dockerfile
+    ports:
+      - "8089:8080"
+    environment:
+      PORT: 8080
+      SPRING_PROFILES_ACTIVE: mock
+      ORDER_SERVICE_URL: http://order-service:8080
+      SELLER_SERVICE_URL: http://seller-service:8080
+      PRODUCT_SERVICE_URL: http://product-service:8080
+    depends_on:
+      - order-service
+      - seller-service
+      - product-service
+
+# Red interna compartida — igual que el Azure Container Apps Environment
+# Los servicios se llaman entre si por nombre (http://seller-service)
+networks:
+  default:
+    name: konrad-network
+    driver: bridge

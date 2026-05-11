@@ -1,0 +1,30 @@
+server:
+  port: ${PORT:8080}
+
+spring:
+  application:
+    name: seller-service
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    com.konrad: DEBUG
+    root: WARN
+
+# URLs de otros servicios dentro del mismo Azure Container Apps Environment
+# En Azure: http://{nombre-de-la-container-app}
+# En local:  http://localhost:{puerto}
+konrad:
+  services:
+    notification-url: ${NOTIFICATION_SERVICE_URL:http://localhost:8086}
+    auth-url: ${AUTH_SERVICE_URL:http://localhost:8081}
+  mock:
+    enabled: true

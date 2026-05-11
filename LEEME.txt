@@ -1,0 +1,180 @@
+=====================================================================
+  E-Commerce Konrad — Archivos de Configuracion
+  Fundacion Universitaria Konrad Lorenz
+  Arquitectura de Software
+=====================================================================
+
+CONTENIDO DE ESTE ZIP
+---------------------
+
+Este archivo contiene TODOS los pom.xml, application.yml y Dockerfile
+de los 9 microservicios del sistema de E-Commerce Konrad, listos para
+copiar a cada repositorio.
+
+IMPORTANTE: Todos los datos son mock (ConcurrentHashMap en memoria).
+Las URLs de servicios externos (Policia, Datacredito, CIFIN, bancos)
+apuntan a valores dummy porque el codigo usa el patron mock en su lugar.
+
+
+ESTRUCTURA DE ARCHIVOS
+----------------------
+
+konrad-config/
+|
+|-- Dockerfile              <- Dockerfile ESTANDAR (igual para los 9 servicios)
+|-- .dockerignore           <- Ignorar archivos innecesarios en el build Docker
+|-- docker-compose.yml      <- Levantar todos los servicios localmente
+|
+|-- auth-service/
+|   |-- pom.xml
+|   |-- src/main/resources/application.yml
+|
+|-- seller-service/
+|   |-- pom.xml
+|   |-- src/main/resources/application.yml
+|
+|-- product-service/
+|   |-- pom.xml
+|   |-- src/main/resources/application.yml
+|
+|-- order-service/
+|   |-- pom.xml
+|   |-- src/main/resources/application.yml
+|
+|-- payment-service/
+|   |-- pom.xml
+|   |-- src/main/resources/application.yml
+|
+|-- notification-service/
+|   |-- pom.xml
+|   |-- src/main/resources/application.yml
+|
+|-- credit-check-service/
+|   |-- pom.xml
+|   |-- src/main/resources/application.yml
+|
+|-- buyer-service/
+|   |-- pom.xml
+|   |-- src/main/resources/application.yml
+|
+|-- bam-service/
+|   |-- pom.xml
+|   |-- src/main/resources/application.yml
+
+
+COMO USAR ESTOS ARCHIVOS
+------------------------
+
+1. COPIAR A CADA REPOSITORIO:
+
+   Toma el pom.xml y el application.yml de cada carpeta y
+   copialos a la carpeta correspondiente de cada microservicio.
+
+   El Dockerfile y el .dockerignore son IDENTICOS para todos.
+   Copia los mismos archivos a la raiz de cada microservicio.
+
+
+2. CORRER UN SERVICIO LOCALMENTE:
+
+   cd seller-service
+   mvn spring-boot:run
+   # Disponible en http://localhost:8082
+
+   Verificar health:
+   curl http://localhost:8082/actuator/health
+
+
+3. CORRER TODOS CON DOCKER (local):
+
+   Coloca el docker-compose.yml en la carpeta RAIZ que contiene
+   todas las carpetas de servicios, luego ejecuta:
+
+   docker-compose up --build
+
+   Puertos locales:
+   - auth-service          -> http://localhost:8081
+   - seller-service        -> http://localhost:8082
+   - product-service       -> http://localhost:8083
+   - order-service         -> http://localhost:8084
+   - payment-service       -> http://localhost:8085
+   - notification-service  -> http://localhost:8086
+   - credit-check-service  -> http://localhost:8087
+   - buyer-service         -> http://localhost:8088
+   - bam-service           -> http://localhost:8089
+
+
+4. DESPLEGAR EN AZURE CONTAINER APPS:
+
+   Construir y subir imagen a Azure Container Registry:
+
+   docker build -t turegistro.azurecr.io/seller-service:1.0.0 .
+   docker push turegistro.azurecr.io/seller-service:1.0.0
+
+   Crear la Container App (ingress interno para todos excepto gateway):
+
+   az containerapp create \
+     --name seller-service \
+     --environment konrad-environment \
+     --image turegistro.azurecr.io/seller-service:1.0.0 \
+     --ingress internal \
+     --target-port 8080 \
+     --env-vars \
+       NOTIFICATION_SERVICE_URL=http://notification-service \
+       AUTH_SERVICE_URL=http://auth-service
+
+   En Azure, los servicios se llaman entre si por nombre de app:
+   http://seller-service  ->  resuelve al container app seller-service
+   http://auth-service    ->  resuelve al container app auth-service
+
+
+VARIABLES DE ENTORNO IMPORTANTES
+---------------------------------
+
+Variable                    Servicio          Descripcion
+--------------------------  ----------------  ----------------------------
+JWT_SECRET                  auth-service      Clave para firmar tokens JWT
+NOTIFICATION_SERVICE_URL    seller, buyer     URL interna de notificaciones
+AUTH_SERVICE_URL            seller, buyer     URL interna de autenticacion
+PRODUCT_SERVICE_URL         order, bam        URL interna de productos
+PAYMENT_SERVICE_URL         order             URL interna de pagos
+DATACREDITO_URL             credit-check      MOCK - no hace HTTP real
+CIFIN_FTP_HOST              credit-check      MOCK - no hace HTTP real
+POLICIA_URL                 credit-check      MOCK - no hace HTTP real
+PSE_INTERMEDIARY_URL        payment           MOCK - no hace HTTP real
+SMTP_HOST                   notification      MOCK - imprime en log
+
+
+POR QUE LAS URLS EXTERNAS SON DUMMY
+-------------------------------------
+
+El proyecto usa datos mock (konrad.mock.enabled=true).
+Cuando este flag esta activo:
+
+  Request -> Controller -> Service -> Repository (ConcurrentHashMap)
+                                           |
+                              NUNCA llega a Policia, Datacredito,
+                              CIFIN, bancos ni SMTP real.
+
+Las variables POLICIA_URL, DATACREDITO_URL, etc. estan declaradas
+solo para documentar que necesitaria el servicio en produccion real.
+El codigo nunca las usa mientras mock=true.
+
+
+PATRONES DE DISENO IMPLEMENTADOS
+----------------------------------
+
+  Patron Strategy   ->  payment-service (PSE / Tarjeta / Consignacion)
+                        credit-check-service (Datacredito / CIFIN)
+
+  Patron Observer   ->  seller-service (publicador de eventos)
+                        notification-service (suscriptor puro)
+
+  Patron Facade     ->  credit-check-service
+                        (unifica Datacredito + CIFIN + Policia)
+
+
+=====================================================================
+  Fundacion Universitaria Konrad Lorenz
+  Programa de Ingenieria de Sistemas
+  Arquitectura de Software — Prof. Carlos Andres Lopez
+=====================================================================

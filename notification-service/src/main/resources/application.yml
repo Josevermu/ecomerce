@@ -1,0 +1,38 @@
+server:
+  port: ${PORT:8080}
+
+spring:
+  application:
+    name: notification-service
+  # SMTP para envio real — ignorado cuando mock.enabled=true
+  mail:
+    host: ${SMTP_HOST:mock-smtp-no-disponible}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USER:mock@mock.com}
+    password: ${SMTP_PASS:mock-pass}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    com.konrad: DEBUG
+    root: WARN
+
+konrad:
+  mock:
+    # true  = imprime correos en log (modo actual)
+    # false = envia SMTP real (produccion)
+    enabled: true

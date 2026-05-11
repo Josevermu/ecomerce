@@ -1,0 +1,41 @@
+server:
+  port: ${PORT:8080}
+
+spring:
+  application:
+    name: order-service
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    com.konrad: DEBUG
+    root: WARN
+
+konrad:
+  services:
+    product-url: ${PRODUCT_SERVICE_URL:http://localhost:8083}
+    payment-url: ${PAYMENT_SERVICE_URL:http://localhost:8085}
+  # Reglas de calculo configurables (punto 11 del documento)
+  comisiones:
+    Ropa: 0.05
+    Calzado: 0.06
+    Electronica: 0.04
+    Accesorios: 0.07
+  envio:
+    base-por-kg: 2000
+    Bogota: 8000
+    Medellin: 10000
+    Cali: 12000
+    Barranquilla: 15000
+  iva:
+    tasa: 0.19
+  mock:
+    enabled: true

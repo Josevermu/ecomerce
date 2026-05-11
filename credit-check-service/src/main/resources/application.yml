@@ -1,0 +1,38 @@
+server:
+  port: ${PORT:8080}
+
+spring:
+  application:
+    name: credit-check-service
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    com.konrad: DEBUG
+    root: WARN
+
+konrad:
+  # Todas estas URLs apuntan a mocks — el codigo nunca hace HTTP real
+  # cuando mock.enabled=true esta activo (Patron Strategy retorna
+  # datos de ConcurrentHashMap en lugar de llamar estos endpoints)
+  datacredito:
+    api-url: ${DATACREDITO_URL:http://mock-datacredito-no-disponible}
+    api-key: ${DATACREDITO_KEY:mock-key}
+  cifin:
+    ftp-host: ${CIFIN_FTP_HOST:mock-cifin-no-disponible}
+    ftp-user: ${CIFIN_FTP_USER:mock-user}
+    ftp-pass: ${CIFIN_FTP_PASS:mock-pass}
+  # La URL de la Policia apunta a un dummy — el JudicialCheckService
+  # usa datos simulados segun el ultimo digito del ID (mock)
+  policia:
+    web-url: ${POLICIA_URL:http://mock-policia-no-disponible}
+  mock:
+    enabled: true
