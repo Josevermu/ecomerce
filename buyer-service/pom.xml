@@ -13,7 +13,7 @@
   </parent>
 
   <groupId>com.konrad</groupId>
-  <artifactId>buyer-service</artifactId>
+  <artifactId>buyerservice</artifactId>
   <version>1.0.0</version>
   <packaging>jar</packaging>
 
