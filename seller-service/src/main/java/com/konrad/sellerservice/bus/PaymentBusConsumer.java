@@ -1,6 +1,7 @@
 package com.konrad.sellerservice.bus;
 
 import com.azure.messaging.servicebus.*;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.konrad.sellerservice.service.SellerApplication;
 import com.konrad.sellerservice.model.entity.SellerApplicationRepository;
@@ -11,14 +12,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-/**
- * Consume mensajes del topic "konrad-payment-events", suscripción "seller-sub".
- *
- * Cuando payment-service confirma un pago de suscripción (PAYMENT_CONFIRMED
- * con entityType=SUBSCRIPTION), activa al vendedor cambiando su estado a ACTIVA.
- *
- * Reemplaza el @EventListener de Spring que no cruzaba contenedores.
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -31,7 +24,12 @@ public class PaymentBusConsumer {
     private String connectionString;
 
     private final SellerApplicationRepository repo;
-    private final ObjectMapper mapper = new ObjectMapper();
+
+    // FAIL_ON_UNKNOWN_PROPERTIES = false — PaymentEventPublisher sends 'monto'
+    // which is not in BusEventDto. Without this Jackson throws and the message
+    // goes to the Dead Letter Queue after 3 retries.
+    private final ObjectMapper mapper = new ObjectMapper()
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     private ServiceBusProcessorClient processor;
 
@@ -61,15 +59,13 @@ public class PaymentBusConsumer {
 
     private void handleMessage(ServiceBusReceivedMessageContext ctx) {
         try {
-            String body = ctx.getMessage().getBody().toString();
-            BusEventDto event = mapper.readValue(body, BusEventDto.class);
+            BusEventDto event = mapper.readValue(
+                    ctx.getMessage().getBody().toString(), BusEventDto.class);
 
             if (!"PAYMENT_CONFIRMED".equals(event.getEventType())) {
                 ctx.complete();
                 return;
             }
-
-            // Solo actúa si el pago es de una SUSCRIPCIÓN
             if (!"SUBSCRIPTION".equals(event.getEntityType())) {
                 ctx.complete();
                 return;
@@ -81,18 +77,19 @@ public class PaymentBusConsumer {
             repo.findById(sellerId).ifPresentOrElse(app -> {
                 app.setStatus(SellerApplication.ApplicationStatus.ACTIVA);
                 repo.save(app);
-                log.info("[SELLER-PAYMENT-CONSUMER] Suscripción ACTIVA — seller: {}, pago: {}",
-                        sellerId, event.getPaymentId());
+                log.info("[SELLER-PAYMENT-CONSUMER] Suscripción ACTIVA — seller: {}", sellerId);
             }, () -> log.warn("[SELLER-PAYMENT-CONSUMER] Seller no encontrado: {}", sellerId));
 
             ctx.complete();
         } catch (Exception e) {
-            log.error("[SELLER-PAYMENT-CONSUMER] Error procesando mensaje: {}", e.getMessage());
+            log.error("[SELLER-PAYMENT-CONSUMER] Error: {}", e.getMessage());
             ctx.abandon();
         }
     }
 
     private boolean isMock() {
-        return connectionString == null || connectionString.equals("mock") || connectionString.isBlank();
+        return connectionString == null
+                || connectionString.equals("mock")
+                || connectionString.isBlank();
     }
 }

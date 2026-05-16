@@ -1,6 +1,7 @@
 package com.konrad.sellerservice.bus;
 
 import com.azure.messaging.servicebus.*;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.konrad.sellerservice.service.SellerApplicationService;
 import jakarta.annotation.PostConstruct;
@@ -10,12 +11,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-/**
- * Consume mensajes del topic "konrad-order-events", suscripción "seller-sub".
- *
- * Cuando order-service registra una calificación (ORDER_RATED), actualiza
- * las estadísticas del vendedor y evalúa si debe ser suspendido (punto 6).
- */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -28,7 +23,12 @@ public class OrderBusConsumer {
     private String connectionString;
 
     private final SellerApplicationService sellerService;
-    private final ObjectMapper mapper = new ObjectMapper();
+
+    // FAIL_ON_UNKNOWN_PROPERTIES = false — OrderEventPublisher sends
+    // 'orderId', 'buyerId', 'total' which are not in BusEventDto.
+    // Without this every ORDER message crashes the consumer.
+    private final ObjectMapper mapper = new ObjectMapper()
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     private ServiceBusProcessorClient processor;
 
@@ -66,17 +66,15 @@ public class OrderBusConsumer {
                 return;
             }
 
-            String sellerId     = event.getSellerId();
-            Integer calificacion = event.getCalificacion();
-
-            if (sellerId == null || calificacion == null) {
+            if (event.getSellerId() == null || event.getCalificacion() == null) {
                 log.warn("[SELLER-ORDER-CONSUMER] Mensaje ORDER_RATED incompleto");
                 ctx.complete();
                 return;
             }
 
-            sellerService.updateRating(sellerId, calificacion);
-            log.info("[SELLER-ORDER-CONSUMER] Rating {} aplicado al seller {}", calificacion, sellerId);
+            sellerService.updateRating(event.getSellerId(), event.getCalificacion());
+            log.info("[SELLER-ORDER-CONSUMER] Rating {} → seller {}",
+                    event.getCalificacion(), event.getSellerId());
             ctx.complete();
         } catch (Exception e) {
             log.error("[SELLER-ORDER-CONSUMER] Error: {}", e.getMessage());
@@ -85,6 +83,8 @@ public class OrderBusConsumer {
     }
 
     private boolean isMock() {
-        return connectionString == null || connectionString.equals("mock") || connectionString.isBlank();
+        return connectionString == null
+                || connectionString.equals("mock")
+                || connectionString.isBlank();
     }
 }
