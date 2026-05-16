@@ -1,6 +1,6 @@
 package com.konrad.buyerservice.service;
 
-import com.konrad.buyerservice.client.BuyerNotificationClient;
+import com.konrad.buyerservice.bus.BuyerEventPublisher;
 import com.konrad.buyerservice.dto.BuyerDtos.*;
 import com.konrad.buyerservice.model.entity.Buyer;
 import com.konrad.buyerservice.model.entity.BuyerRepository;
@@ -18,14 +18,11 @@ import java.util.stream.Collectors;
 public class BuyerService {
 
     private final BuyerRepository repo;
-    private final BuyerNotificationClient notificationClient;
-
-    // ─── Punto 7: Registro de comprador ──────────────────────────────────────
+    private final BuyerEventPublisher eventPublisher; // ← Service Bus publisher
 
     public BuyerRegistrationResponse register(BuyerRegistrationRequest request) {
-        if (repo.existsByEmail(request.getCorreo())) {
+        if (repo.existsByEmail(request.getCorreo()))
             throw new RuntimeException("El correo ya está registrado: " + request.getCorreo());
-        }
 
         Buyer buyer = Buyer.builder()
                 .nombres(request.getNombres())
@@ -43,26 +40,21 @@ public class BuyerService {
                 .build();
 
         Buyer saved = repo.save(buyer);
-        log.info("[BUYER] Comprador registrado: {} — {}", saved.getId(), saved.getCorreo());
+        log.info("[BUYER] Registrado: {} — {}", saved.getId(), saved.getCorreo());
 
-        // Generar contraseña temporal (RNF: mínimo 8 chars, mayúscula, minúscula y número)
-        String tempPassword = "Buyer" + (int)(Math.random() * 9000 + 1000) + "!";
-
-        // Notificar al notification-service para envío de credenciales por correo
-        notificationClient.notifyBuyerRegistered(
-                saved.getId(), saved.getCorreo(),
-                saved.getNombres() + " " + saved.getApellidos(),
-                tempPassword
+        // Publica en konrad-buyer-events → notification-service envía credenciales
+        eventPublisher.publishRegistered(
+                saved.getId(),
+                saved.getCorreo(),
+                saved.getNombres() + " " + saved.getApellidos()
         );
 
         return BuyerRegistrationResponse.builder()
                 .buyerId(saved.getId())
                 .correo(saved.getCorreo())
-                .mensaje("Registro exitoso. Revisa tu correo para obtener tus credenciales de acceso.")
+                .mensaje("Registro exitoso. Revisa tu correo para obtener tus credenciales.")
                 .build();
     }
-
-    // ─── Consultas y actualización de perfil ──────────────────────────────────
 
     public BuyerProfileResponse findById(String id) {
         return toProfile(repo.findById(id)
@@ -81,13 +73,11 @@ public class BuyerService {
     public BuyerProfileResponse update(String id, BuyerUpdateRequest request) {
         Buyer buyer = repo.findById(id)
                 .orElseThrow(() -> new RuntimeException("Comprador no encontrado: " + id));
-
         if (request.getCiudad()    != null) buyer.setCiudad(request.getCiudad());
         if (request.getDireccion() != null) buyer.setDireccion(request.getDireccion());
         if (request.getTelefono()  != null) buyer.setTelefono(request.getTelefono());
         if (request.getTwitter()   != null) buyer.setTwitter(request.getTwitter());
         if (request.getInstagram() != null) buyer.setInstagram(request.getInstagram());
-
         return toProfile(repo.save(buyer));
     }
 
@@ -96,20 +86,14 @@ public class BuyerService {
                 .orElseThrow(() -> new RuntimeException("Comprador no encontrado: " + id));
         buyer.setActivo(false);
         repo.save(buyer);
-        log.info("[BUYER] Comprador desactivado: {}", id);
     }
-
-    // ─── Mapper ──────────────────────────────────────────────────────────────
 
     private BuyerProfileResponse toProfile(Buyer b) {
         return BuyerProfileResponse.builder()
-                .id(b.getId())
-                .nombres(b.getNombres()).apellidos(b.getApellidos())
-                .identificacion(b.getIdentificacion())
-                .correo(b.getCorreo())
-                .pais(b.getPais()).ciudad(b.getCiudad())
-                .direccion(b.getDireccion()).telefono(b.getTelefono())
-                .twitter(b.getTwitter()).instagram(b.getInstagram())
+                .id(b.getId()).nombres(b.getNombres()).apellidos(b.getApellidos())
+                .identificacion(b.getIdentificacion()).correo(b.getCorreo())
+                .pais(b.getPais()).ciudad(b.getCiudad()).direccion(b.getDireccion())
+                .telefono(b.getTelefono()).twitter(b.getTwitter()).instagram(b.getInstagram())
                 .creadoEn(b.getCreadoEn() != null ? b.getCreadoEn().toString() : "")
                 .build();
     }

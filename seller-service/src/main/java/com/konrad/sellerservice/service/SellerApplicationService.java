@@ -1,7 +1,6 @@
 package com.konrad.sellerservice.service;
 
-import com.konrad.sellerservice.client.AuthClient;
-import com.konrad.sellerservice.client.NotificationClient;
+import com.konrad.sellerservice.bus.SellerEventPublisher;
 import com.konrad.sellerservice.dto.SellerDtos.*;
 import com.konrad.sellerservice.service.SellerApplication.ApplicationStatus;
 import com.konrad.sellerservice.model.entity.SellerApplicationRepository;
@@ -21,8 +20,7 @@ import java.util.stream.Collectors;
 public class SellerApplicationService {
 
     private final SellerApplicationRepository repo;
-    private final NotificationClient notificationClient;
-    private final AuthClient authClient; // CORRECCIÓN: agregado para crear usuario al aprobar
+    private final SellerEventPublisher eventPublisher; // ← Service Bus publisher
 
     // ─── Punto 1: Registro de solicitud ──────────────────────────────────────
     public ApplicationSubmittedResponse submitApplication(SellerRegistrationRequest request) {
@@ -48,7 +46,8 @@ public class SellerApplicationService {
         SellerApplication saved = repo.save(app);
         log.info("[SELLER] Solicitud registrada: {}", saved.getId());
 
-        notificationClient.notifySubmitted(
+        // Publica en konrad-seller-events → notification-service envía correo
+        eventPublisher.publishSubmitted(
                 saved.getId(),
                 saved.getCorreo(),
                 saved.getNombres() + " " + saved.getApellidos()
@@ -57,7 +56,7 @@ public class SellerApplicationService {
         return ApplicationSubmittedResponse.builder()
                 .applicationId(saved.getId())
                 .status("PENDIENTE")
-                .mensaje("Solicitud registrada. Número de solicitud: " + saved.getId())
+                .mensaje("Solicitud registrada. Número: " + saved.getId())
                 .build();
     }
 
@@ -81,26 +80,15 @@ public class SellerApplicationService {
         switch (newStatus) {
             case APROBADA -> {
                 log.info("[SELLER] Solicitud APROBADA: {}", applicationId);
-
-                // CORRECCIÓN: crear el usuario en auth-service ANTES de notificar
-                // para que el vendedor pueda hacer login con las credenciales del correo.
-                // authClient.registerApprovedSeller() retorna la contraseña temporal
-                // generada, que el notification-service incluirá en el correo.
-                String tempPassword = authClient.registerApprovedSeller(
-                        applicationId, app.getCorreo());
-
-                log.info("[SELLER] Usuario creado en auth-service para: {} (pass: {})",
-                        app.getCorreo(), tempPassword);
-
-                notificationClient.notifyApproved(applicationId, app.getCorreo(), app.getNombres());
+                eventPublisher.publishApproved(applicationId, app.getCorreo(), app.getNombres());
             }
             case RECHAZADA -> {
-                log.info("[SELLER] Solicitud RECHAZADA: {} — {}", applicationId, request.getMotivo());
-                notificationClient.notifyRejected(applicationId, app.getCorreo(), request.getMotivo());
+                log.info("[SELLER] Solicitud RECHAZADA: {}", applicationId);
+                eventPublisher.publishRejected(applicationId, app.getCorreo(), request.getMotivo());
             }
             case DEVUELTA -> {
                 log.info("[SELLER] Solicitud DEVUELTA: {}", applicationId);
-                notificationClient.notifyReturned(applicationId, app.getCorreo());
+                eventPublisher.publishReturned(applicationId, app.getCorreo());
             }
             default -> throw new RuntimeException("Decisión inválida: " + request.getDecision());
         }
@@ -108,32 +96,33 @@ public class SellerApplicationService {
         return toDetail(app);
     }
 
-    // ─── Punto 3: Activar suscripción tras pago ──────────────────────────────
+    // ─── Punto 3: Activar suscripción (escucha bus desde PaymentBusConsumer) ──
     @EventListener
     public void activateSubscription(SellerEvents.SubscriptionPaymentConfirmed event) {
         repo.findById(event.getSellerId()).ifPresent(app -> {
             app.setStatus(ApplicationStatus.ACTIVA);
             repo.save(app);
-            log.info("[SELLER] Suscripción ACTIVA para: {} (pago: {})",
+            log.info("[SELLER] Suscripción ACTIVA: {} (pago: {})",
                     event.getSellerId(), event.getPaymentId());
         });
     }
 
-    // ─── Punto 5: Job diario — verificar vencimientos ────────────────────────
+    // ─── Punto 5: Job diario — vencimientos ───────────────────────────────────
     @Scheduled(cron = "0 0 6 * * *")
     public void checkExpiredSubscriptions() {
         List<SellerApplication> activos = repo.findByStatus(ApplicationStatus.ACTIVA);
         LocalDateTime ahora = LocalDateTime.now();
 
         for (SellerApplication app : activos) {
-            long diasDesde = java.time.Duration.between(app.getFechaSolicitud(), ahora).toDays();
+            long dias = java.time.Duration.between(app.getFechaSolicitud(), ahora).toDays();
 
-            if (diasDesde > 60 && diasDesde <= 90) {
+            if (dias > 60 && dias <= 90) {
                 app.setStatus(ApplicationStatus.EN_MORA);
                 repo.save(app);
+                eventPublisher.publishSubscriptionExpired(app.getId(), app.getCorreo());
                 log.info("[SELLER] EN MORA: {}", app.getId());
-                notificationClient.notifySubscriptionExpired(app.getId(), app.getCorreo());
-            } else if (diasDesde > 90) {
+
+            } else if (dias > 90) {
                 app.setStatus(ApplicationStatus.CANCELADA);
                 repo.save(app);
                 log.info("[SELLER] CANCELADA por mora: {}", app.getId());
@@ -141,47 +130,39 @@ public class SellerApplicationService {
         }
     }
 
-    // ─── Punto 6: Suspensión por calificaciones ───────────────────────────────
+    // ─── Punto 6: Actualizar calificación ────────────────────────────────────
     public void updateRating(String sellerId, int newRating) {
         SellerApplication app = repo.findById(sellerId)
                 .orElseThrow(() -> new RuntimeException("Vendedor no encontrado: " + sellerId));
 
         int total    = app.getTotalCalificaciones() + 1;
         int bajas    = app.getCalificacionesBajas() + (newRating < 3 ? 1 : 0);
-        double promedio = ((app.getPromedioCalificacion() * app.getTotalCalificaciones()) + newRating) / total;
+        double prom  = ((app.getPromedioCalificacion() * app.getTotalCalificaciones()) + newRating) / total;
 
         app.setTotalCalificaciones(total);
         app.setCalificacionesBajas(bajas);
-        app.setPromedioCalificacion(promedio);
+        app.setPromedioCalificacion(prom);
         repo.save(app);
 
-        boolean suspenderPorBajas    = bajas >= 10;
-        boolean suspenderPorPromedio = promedio < 5.0 && total >= 5;
+        boolean porBajas   = bajas >= 10;
+        boolean porPromedio = prom < 5.0 && total >= 5;
 
-        if ((suspenderPorBajas || suspenderPorPromedio) && app.getStatus() == ApplicationStatus.ACTIVA) {
+        if ((porBajas || porPromedio) && app.getStatus() == ApplicationStatus.ACTIVA) {
             app.setStatus(ApplicationStatus.CANCELADA);
             repo.save(app);
-            String motivo = suspenderPorBajas ? "LOW_RATING_COUNT" : "LOW_AVERAGE";
-            notificationClient.notifySellerSuspended(app.getId(), app.getCorreo(), motivo);
-            log.info("[SELLER] Vendedor CANCELADO por calificaciones: {} ({})", sellerId, motivo);
+            String motivo = porBajas ? "LOW_RATING_COUNT" : "LOW_AVERAGE";
+            eventPublisher.publishSellerSuspended(sellerId, app.getCorreo(), motivo);
+            log.info("[SELLER] CANCELADA por calificaciones: {} ({})", sellerId, motivo);
         }
     }
 
-    // ─── Consultas públicas y del Director ────────────────────────────────────
-    public ApplicationDetailResponse queryPublic(String q) {
-        SellerApplication app = repo.findById(q)
-                .or(() -> repo.findByIdentificacion(q))
-                .orElseThrow(() -> new RuntimeException("Solicitud no encontrada: " + q));
-        return toDetail(app);
-    }
-
+    // ─── Consultas ────────────────────────────────────────────────────────────
     public List<ApplicationSummaryResponse> searchApplications(String identificacion,
-                                                                String status,
-                                                                String desde, String hasta) {
-        LocalDateTime desdeDT = desde != null ? LocalDateTime.parse(desde + "T00:00:00") : null;
-        LocalDateTime hastaDT = hasta != null ? LocalDateTime.parse(hasta + "T23:59:59") : null;
-
-        return repo.findByFilters(identificacion, status, desdeDT, hastaDT)
+                                                               String status,
+                                                               String desde, String hasta) {
+        LocalDateTime desdeDt = desde != null ? LocalDateTime.parse(desde + "T00:00:00") : null;
+        LocalDateTime hastaDt = hasta != null ? LocalDateTime.parse(hasta + "T23:59:59") : null;
+        return repo.findByFilters(identificacion, status, desdeDt, hastaDt)
                 .stream().map(this::toSummary).collect(Collectors.toList());
     }
 
@@ -190,41 +171,40 @@ public class SellerApplicationService {
                 .orElseThrow(() -> new RuntimeException("Solicitud no encontrada: " + id)));
     }
 
-    // ─── Helpers ─────────────────────────────────────────────────────────────
-    private void validateDocuments(SellerRegistrationRequest request) {
-        if (request.getDocumentos() == null || request.getDocumentos().size() < 4) {
-            throw new RuntimeException("Se requieren al menos 4 documentos adjuntos");
-        }
+    public ApplicationDetailResponse queryPublic(String query) {
+        return repo.findById(query)
+                .or(() -> repo.findByIdentificacion(query))
+                .map(this::toDetail)
+                .orElseThrow(() -> new RuntimeException("Solicitud no encontrada"));
     }
 
-private ApplicationSummaryResponse toSummary(SellerApplication a) {
-    return ApplicationSummaryResponse.builder()
-            .id(a.getId())                    // era .applicationId()
-            .identificacion(a.getIdentificacion())
-            .apellidos(a.getApellidos())
-            .nombres(a.getNombres())
-            .correo(a.getCorreo())
-            .status(a.getStatus().name())
-            .fechaSolicitud(a.getFechaSolicitud() != null ? a.getFechaSolicitud().toString() : "")
-            .build();
-}
+    // ─── Mappers ──────────────────────────────────────────────────────────────
+    private ApplicationSummaryResponse toSummary(SellerApplication a) {
+        return ApplicationSummaryResponse.builder()
+                .id(a.getId()).identificacion(a.getIdentificacion())
+                .apellidos(a.getApellidos()).nombres(a.getNombres())
+                .correo(a.getCorreo()).status(a.getStatus().name())
+                .fechaSolicitud(a.getFechaSolicitud() != null ? a.getFechaSolicitud().toString() : "")
+                .build();
+    }
 
-private ApplicationDetailResponse toDetail(SellerApplication a) {
-    return ApplicationDetailResponse.builder()
-            .id(a.getId())                    // era .applicationId()
-            .nombres(a.getNombres())
-            .apellidos(a.getApellidos())
-            .identificacion(a.getIdentificacion())
-            .tipoPersona(a.getTipoPersona() != null ? a.getTipoPersona().name() : "")
-            .correo(a.getCorreo())
-            .pais(a.getPais())
-            .ciudad(a.getCiudad())
-            .telefono(a.getTelefono())
-            .documentos(a.getDocumentos())
-            .status(a.getStatus().name())
-            .motivoRechazo(a.getMotivoRechazo())
-            .fechaSolicitud(a.getFechaSolicitud() != null ? a.getFechaSolicitud().toString() : "")
-            .fechaDecision(a.getFechaDecision()  != null ? a.getFechaDecision().toString()  : "")
-            .build();                         // sin .sellerId() — ese campo no existe en el DTO
-}
+    private ApplicationDetailResponse toDetail(SellerApplication a) {
+        return ApplicationDetailResponse.builder()
+                .id(a.getId()).nombres(a.getNombres()).apellidos(a.getApellidos())
+                .identificacion(a.getIdentificacion())
+                .tipoPersona(a.getTipoPersona() != null ? a.getTipoPersona().name() : "")
+                .correo(a.getCorreo()).pais(a.getPais()).ciudad(a.getCiudad())
+                .telefono(a.getTelefono()).documentos(a.getDocumentos())
+                .status(a.getStatus().name()).motivoRechazo(a.getMotivoRechazo())
+                .fechaSolicitud(a.getFechaSolicitud() != null ? a.getFechaSolicitud().toString() : "")
+                .fechaDecision(a.getFechaDecision()  != null ? a.getFechaDecision().toString()  : "")
+                .build();
+    }
+
+    private void validateDocuments(SellerRegistrationRequest req) {
+        if (req.getDocumentos() == null || req.getDocumentos().isEmpty())
+            throw new RuntimeException("Debe adjuntar los documentos requeridos");
+        if ("JURIDICA".equals(req.getTipoPersona()) && req.getDocumentos().size() < 3)
+            throw new RuntimeException("Persona jurídica: cédula/NIT, RUT y cámara de comercio");
+    }
 }
