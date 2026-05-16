@@ -30,3 +30,7 @@ konrad:
     credit-check-url:   ${CREDIT_CHECK_SERVICE_URL:http://localhost:8087}
   mock:
     enabled: true
+
+azure:
+  servicebus:
+    connection-string: ${AZURE_SERVICEBUS_CONNECTION_STRING:mock}

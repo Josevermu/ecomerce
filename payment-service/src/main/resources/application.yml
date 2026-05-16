@@ -31,3 +31,7 @@ konrad:
     ftp-pass: ${BANK_FTP_PASS:mock-pass}
   mock:
     enabled: true
+
+azure:
+  servicebus:
+    connection-string: ${AZURE_SERVICEBUS_CONNECTION_STRING:mock}

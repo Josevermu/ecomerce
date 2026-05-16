@@ -25,3 +25,7 @@ konrad:
     notification-url: ${NOTIFICATION_SERVICE_URL:http://localhost:8086}
   mock:
     enabled: true
+
+azure:
+  servicebus:
+    connection-string: ${AZURE_SERVICEBUS_CONNECTION_STRING:mock}

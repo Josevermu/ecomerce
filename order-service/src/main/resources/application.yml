@@ -31,3 +31,7 @@ konrad:
     seller-url:       ${SELLER_SERVICE_URL:http://localhost:8082}
   mock:
     enabled: true
+
+azure:
+  servicebus:
+    connection-string: ${AZURE_SERVICEBUS_CONNECTION_STRING:mock}
